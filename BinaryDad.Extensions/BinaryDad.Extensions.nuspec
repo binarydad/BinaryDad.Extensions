@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>BinaryDad.Extensions</id>
+    <version>1</version>
+    <authors>Ryan Peters</authors>
+    <owners>Ryan Peters</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>
+      A set of common utilities and extension methods for .NET..
+    </description>
+    <releaseNotes>Check TFS history for changes since previous release.</releaseNotes>
+  </metadata>
+  <files>
+    <file src="bin\$configuration$\$id$.pdb" target="lib\net452\" />
+  </files>
+</package>
