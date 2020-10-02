@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Linq;
@@ -166,6 +167,30 @@ namespace BinaryDad.Extensions
             return property
                 .GetDataColumnNames()
                 .FirstOrDefault(f => columns.Contains(f));
+        }
+
+        /// <summary>
+        /// Retrieves an instance of the <see cref="TypeConverter"/> associated with the property's <see cref="TypeConverterAttribute"/>
+        /// </summary>
+        /// <param name="property"></param>
+        /// <returns></returns>
+        internal static TypeConverter GetAttributeTypeConverter(this PropertyInfo property)
+        {
+            var converter = property.GetCustomAttribute<TypeConverterAttribute>();
+
+            if (converter != null)
+            {
+                var converterType = Type.GetType(converter.ConverterTypeName);
+
+                if (converterType == typeof(EnumConverter))
+                {
+                    return (TypeConverter)Activator.CreateInstance(converterType, property.PropertyType);
+                }
+
+                return (TypeConverter)Activator.CreateInstance(converterType);
+            }
+
+            return null;
         }
 
         #endregion

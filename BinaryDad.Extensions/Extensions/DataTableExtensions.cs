@@ -117,12 +117,7 @@ namespace BinaryDad.Extensions
 
             var instance = Activator.CreateInstance(type);
 
-            /* 01/09/13 - SJK: Class properties can be decorated with our custom DataRowField attribute. This allows us to 
-				 * declare a mapping between an object and a database column that are named differently. If the attribute is 
-				 * present on a property, we use its name for the customProperties collection. Otherwise, we use the name
-				 * of the property as we assume the name on the database column is the same.             
-				 */
-            properties.ForEach(p => RecursiveSetValue(p, row, instance));
+            properties.ForEach(p => SetValueFromRow(p, row, instance));
 
             return instance;
         }
@@ -281,66 +276,73 @@ namespace BinaryDad.Extensions
 
         #region Private Methods
 
-        private static void RecursiveSetValue(PropertyInfo property, DataRow row, object instance, int maxDepth = 5, int currentDepth = 0)
+        private static string QuoteValue(string value) => string.Concat("\"", value.Replace("\"", "\"\""), "\"");
+
+        /// <summary>
+        /// Sets the value of a property using the matched column from the data row. Supports using <see cref="ColumnAttribute"/> and <see cref="NotMappedAttribute"/> for column mapping.
+        /// </summary>
+        /// <param name="property"></param>
+        /// <param name="row"></param>
+        /// <param name="instance"></param>
+        private static void SetValueFromRow(PropertyInfo property, DataRow row, object instance)
         {
-            #region Max Depth
-
-            //Ensure we prevent too complex objects. This could be a sign of poor design or a condition prompting infinite recursion.
-            if (currentDepth > maxDepth)
+            if (property == null)
             {
-                throw new MaxRecursionException($"The currentDepth {currentDepth} may not exceed the maxDepth {maxDepth} for recursion. Check the complexity of the object and its implementation of the DataRowPopulate attribute.");
+                throw new ArgumentNullException(nameof(property));
             }
 
-            #endregion
-
-            try
+            // ignore the property if specified
+            if (property.HasCustomAttribute<NotMappedAttribute>())
             {
-                // ignore the property if specified
-                if (property.HasCustomAttribute<NotMappedAttribute>())
+                return;
+            }
+
+            if (row == null)
+            {
+                return;
+            }
+
+            // get the column name from the row
+            var matchedColumnName = property.GetDataColumnName(row.Table.Columns);
+
+            //Set the value if we matched a column. If we don't have a match, there's simply no way to set a value.
+            if (matchedColumnName != null)
+            {
+                // raw value from the row, matching on column name
+                var tableValue = row[matchedColumnName];
+
+                // RJP - we'll come back to this
+                tableValue = ApplyTypeConversion(property, tableValue);
+
+                // if DBNull, set as null
+                var value = tableValue == DBNull.Value ? null : tableValue;
+
+                if (value != null)
                 {
-                    return;
-                }
-
-                // if we found DataRowPopulate attributes, we go a level deeper
-                if (property.HasCustomAttribute<DataRowPopulateAttribute>())
-                {
-                    currentDepth++;
-
-                    // get all properties on this type and continue if we have any
-                    var subProperties = property.PropertyType.GetProperties();
-
-                    if (subProperties.AnyAndNotNull())
+                    try
                     {
-                        // since we have properties, we attempt to create an item (e.g. Address) based on the type of the current p
-                        var subItem = Activator.CreateInstance(Type.GetType(property.PropertyType.AssemblyQualifiedName));
-
-                        // attempt to set each value on subItem (e.g. populating Street1, Street2 on Address).
-                        subProperties.ForEach(p2 => RecursiveSetValue(p2, row, subItem, maxDepth, currentDepth));
-
-                        // now that subItem (instance of Address) has been populated, we in turn need to populate the current p (Address) on item.
-                        property.SetValue(instance, subItem, null);
+                        property.SetValue(instance, value.To(property.PropertyType), null);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        property.SetValue(row, instance);
+                        // encapsulate more detail about why the conversion failed
+                        throw new DataPropertyConversionException(instance, property, value, ex);
                     }
                 }
-                else
-                {
-                    property.SetValue(row, instance);
-                }
-            }
-            catch (MaxRecursionException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Property {property.Name} cannot be set from row.", ex);
             }
         }
 
-        private static string QuoteValue(string value) => string.Concat("\"", value.Replace("\"", "\"\""), "\"");
+        private static object ApplyTypeConversion(PropertyInfo property, object sourceValue)
+        {
+            var converter = property.GetAttributeTypeConverter();
+
+            if (converter != null && converter.CanConvertFrom(sourceValue.GetType()))
+            {
+                sourceValue = converter.ConvertFrom(sourceValue);
+            }
+
+            return sourceValue;
+        }
 
         #endregion
     }
