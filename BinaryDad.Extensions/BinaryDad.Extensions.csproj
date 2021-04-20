@@ -9,8 +9,10 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <Description>A bunch of common extensions</Description>
+    <Description>A set of common utilities and extension methods for .NET.</Description>
     <LangVersion>7.3</LangVersion>
+    <Version>21.4.20.1</Version>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>

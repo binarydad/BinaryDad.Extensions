@@ -255,6 +255,17 @@ namespace BinaryDad.Extensions
             return list;
         }
 
+        public static IEnumerable<T> WhereNotNull<T>(this IEnumerable<T> list)
+        {
+            foreach (var item in list)
+            {
+                if (item != null)
+                {
+                    yield return item;
+                }
+            }
+        }
+
         #endregion
 
         #region ForEach
