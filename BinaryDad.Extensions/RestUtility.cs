@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 
 namespace BinaryDad.Extensions
 {
@@ -148,7 +149,7 @@ namespace BinaryDad.Extensions
             if (body != null)
             {
                 var serializedBody = body.Serialize();
-                var bytes = System.Text.Encoding.GetEncoding("iso-8859-1").GetBytes(serializedBody);
+                var bytes = Encoding.UTF8.GetBytes(serializedBody);
 
                 request.ContentLength = bytes.Length;
 
