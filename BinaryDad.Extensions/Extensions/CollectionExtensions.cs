@@ -6,6 +6,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace BinaryDad.Extensions
 {
@@ -22,6 +23,20 @@ namespace BinaryDad.Extensions
             }
 
             items.Add(item);
+        }
+
+        /// <summary>
+        /// Adds the elements of the specified collection to the end of the <see cref="ICollection{T}"/>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="items"></param>
+        public static void AddRange<T>(this ICollection<T> source, IEnumerable<T> items)
+        {
+            foreach (var item in items)
+            {
+                source.Add(item);
+            }
         }
 
         /// <summary>
@@ -59,31 +74,82 @@ namespace BinaryDad.Extensions
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="collection"></param>
-        /// <param name="useColumnAttributeName">Specifies whether the data column should use the name from <see cref="ColumnAttribute"/></param> or <see cref="PropertyAliasAttribute"/>, if bound to a property.
+        /// <param name="columnNameModifier">If a non-null string is returned, the column name is overridden</param>
+        /// <param name="useColumnAttributeName">Specifies whether the data column should use the name from <see cref="ColumnAttribute"/></param>, if bound to a property.
         /// <param name="tableName"></param>
         /// <returns></returns>
-        public static DataTable ToDataTable<T>(this IEnumerable<T> collection, bool useColumnAttributeName = false, string tableName = null) where T : class
+        public static DataTable ToDataTable(this IEnumerable collection, Func<PropertyInfo, string> columnNameModifier, bool useColumnAttributeName = false, string tableName = null)
         {
+            if (collection == null)
+            {
+                return null;
+            }
+
+            #region Get type of first record
+
+            // NOTE: 
+            // We assume all values are the same, so use the type from the first record. 
+            // This allows us to use the actual instance type instead of the generic version (useful for anonymous type collections)
+
+            Type type = null;
+            var genericArguments = collection.GetType().GetGenericArguments();
+
+            if (genericArguments.Any())
+            {
+                // handle anonymous types, where there are multiple generic arguments (the first is an integer)
+                type = genericArguments.FirstOrDefault(g => g.IsClass);
+            }
+            else
+            {
+                var enumerator = collection.GetEnumerator();
+
+                enumerator.MoveNext();
+
+                type = enumerator.Current.GetType();
+            }
+
+            #endregion
+
             using (var table = new DataTable(tableName))
             {
                 #region Build Table Schema
 
-                var propertyInfo = typeof(T)
+                var propertyInfo = type
                     .GetProperties()
-                    .Select(p => new
+                    .Where(p => !p.HasCustomAttribute<NotMappedAttribute>())
+                    .Select(p =>
                     {
-                        Property = p,
+                        string columnName = p.Name;
+                        string columnTypeName = null;
 
                         // set column name to be either the property name
                         // or, if specified, based on the attribute
-                        ColumnName = useColumnAttributeName
-                            ? p.GetDataColumnNames().FirstOrDefault()
-                            : p.Name,
+                        if (useColumnAttributeName)
+                        {
+                            var columnAttributes = p.GetColumnAttributes();
 
-                        // include the column if [NotMapped] is NOT attached
-                        IncludeColumn = !p.HasCustomAttribute<NotMappedAttribute>()
+                            columnName = p.GetDataColumnNames(columnAttributes).FirstOrDefault();
+                            columnTypeName = columnAttributes.FirstOrDefault()?.TypeName;
+                        }
+
+                        if (columnNameModifier != null)
+                        {
+                            var modifiedColumnName = columnNameModifier.Invoke(p);
+
+                            if (modifiedColumnName.IsNotEmpty())
+                            {
+                                columnName = modifiedColumnName;
+                            }
+                        }
+
+                        return new
+                        {
+                            Property = p,
+                            ColumnTypeName = columnTypeName,
+                            Converter = p.GetAttributeTypeConverter(),
+                            ColumnName = columnName
+                        };
                     })
-                    .Where(p => p.IncludeColumn)
                     .ToList();
 
                 foreach (var info in propertyInfo)
@@ -93,6 +159,11 @@ namespace BinaryDad.Extensions
                     if (columnType.IsGenericType)
                     {
                         columnType = columnType.GetGenericArguments()[0];
+                    }
+
+                    if (info.ColumnTypeName.IsNotEmpty())
+                    {
+                        columnType = SqlTypeMap.GetType(info.ColumnTypeName);
                     }
 
                     table.Columns.Add(info.ColumnName, columnType);
@@ -109,6 +180,12 @@ namespace BinaryDad.Extensions
                     foreach (var info in propertyInfo)
                     {
                         var value = info.Property.GetValue(item, null);
+                        var columnType = row.Table.Columns[info.ColumnName].DataType;
+
+                        if (info.Converter != null && info.Converter.CanConvertTo(columnType))
+                        {
+                            value = info.Converter.ConvertTo(value, columnType);
+                        }
 
                         if (value != null)
                         {

@@ -84,6 +84,19 @@ namespace BinaryDad.Extensions
         /// <returns></returns>
         internal static IEnumerable<string> GetDataColumnNames(this PropertyInfo property)
         {
+            var attributes = property.GetColumnAttributes();
+
+            return GetDataColumnNames(property, attributes);
+        }
+
+        /// <summary>
+        /// Retrieves a list of available property binding aliases using <see cref="ColumnAttribute"/>.
+        /// </summary>
+        /// <param name="property"></param>
+        /// <param name="attributes"></param>
+        /// <returns></returns>
+        internal static IEnumerable<string> GetDataColumnNames(this PropertyInfo property, ICollection<ColumnAttribute> attributes)
+        {
             #region Null checks
 
             if (property == null)
@@ -95,14 +108,9 @@ namespace BinaryDad.Extensions
 
             var dataRowFieldNames = new List<string>();
 
-            var attributes = property
-                .GetCustomAttributes(true);
-
-            var columnAttribute = attributes.FirstOfType<ColumnAttribute>();
-
-            if (columnAttribute != null)
+            foreach (var attribute in attributes)
             {
-                dataRowFieldNames.Add(columnAttribute.Name);
+                dataRowFieldNames.Add(attribute.Name);
             }
 
             // add the property's name at the end, so it's the last in the lookup
@@ -167,6 +175,14 @@ namespace BinaryDad.Extensions
             return property
                 .GetDataColumnNames()
                 .FirstOrDefault(f => columns.Contains(f));
+        }
+
+        internal static ICollection<ColumnAttribute> GetColumnAttributes(this PropertyInfo property)
+        {
+            return property
+                .GetCustomAttributes<ColumnAttribute>()
+                .OrderBy(c => !c.IsDefaultAttribute())
+                .ToList();
         }
 
         /// <summary>
